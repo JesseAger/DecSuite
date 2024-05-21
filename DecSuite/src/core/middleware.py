@@ -3,6 +3,7 @@
 from django.http import HttpResponse
 from core.models import RequestLog
 from logApp.models import DetailedLog
+from adminInterface.models import FirewallRule
 
 class RequestInspectionMiddleware:
     def __init__(self, get_response):

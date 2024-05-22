@@ -1,18 +1,17 @@
-# core/middleware.py
-
 from django.http import HttpResponse
 from core.models import RequestLog
 from logApp.models import DetailedLog
 from adminInterface.models import FirewallRule
+from core.utils import retaliate
+from core.ai_model import analyze_request  # Importing AI model function
+import os
+import subprocess
 
 class RequestInspectionMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # Code to be executed for each request before
-        # the view (and later middleware) are called.
-
         ip_address = request.META.get('REMOTE_ADDR')
         path = request.path
         request_method = request.method
@@ -21,15 +20,14 @@ class RequestInspectionMiddleware:
         # Log the request
         log = RequestLog.objects.create(ip_address=ip_address, request_method=request_method, path=path)
 
-        # Placeholder for AI model analysis
-        # is_malicious = analyze_request(ip_address, path, request_method)
-        is_malicious = False  # Replace with actual analysis result
-
-        log.is_malicious = is_malicious
-        log.save()
-
+        # Analyze the request using AI model
+        is_malicious, attack_type = analyze_request(ip_address, path, request_method, request_headers)
+        
         if is_malicious:
-            # Log detailed information
+            log.is_malicious = True
+            log.save()
+
+            # Block the request
             DetailedLog.objects.create(
                 ip_address=ip_address,
                 request_method=request_method,
@@ -37,11 +35,21 @@ class RequestInspectionMiddleware:
                 request_headers=request_headers,
                 response_status=403,
                 response_headers={'Content-Type': 'text/plain'},
-                response_body='Blocked by DecSuite',
+                response_body='Blocked by DecSuite Firewall',
+                is_malicious=True  # Mark as malicious
             )
-            return HttpResponse('Blocked by DecSuite', status=403)
 
-        # Get the response
+            # Execute the corresponding retaliation script
+            script_name = f"{attack_type.lower()}.py"
+            script_path = os.path.join("core", "scripts", script_name)
+            if os.path.exists(script_path):
+                subprocess.run(["python", script_path, ip_address])
+            else:
+                print(f"Retaliation script for {attack_type} not found: {script_path}")
+
+            return HttpResponse('Blocked by DecSuite Firewall', status=403)
+
+        # If not malicious, proceed normally
         response = self.get_response(request)
 
         # Log detailed information
@@ -53,6 +61,7 @@ class RequestInspectionMiddleware:
             response_status=response.status_code,
             response_headers=dict(response.items()),
             response_body=response.content.decode(),
+            is_malicious=False  # Mark as not malicious
         )
 
         return response

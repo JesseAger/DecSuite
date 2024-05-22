@@ -12,3 +12,4 @@ class DetailedLog(models.Model):
     response_headers = models.TextField()
     response_body = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    is_malicious = models.BooleanField(default=False)
